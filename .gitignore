@@ -16,3 +16,5 @@ dist/
 build/
 coverage/
 .supabase/
+supabase/.temp/
+supabase/.branches/
