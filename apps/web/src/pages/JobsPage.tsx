@@ -21,11 +21,35 @@ type AgentSession = NonNullable<NonNullable<Agent["ai_context"]>["sessions"]>[nu
 
 const makeSessionKey = (agentId: string, session: AgentSession | null, index: number) => {
   if (!session) return `${agentId}:runtime:${index}`;
-  const identity = session.flow_id ?? session.session_id ?? session.source ?? `session-${index}`;
+  // Keep grouping stable per session file; flow_id changes per turn and can split one session into many cards.
+  const identity = session.session_id ?? session.source ?? session.flow_id ?? `session-${index}`;
   return `${agentId}:${identity}`;
 };
 
 type TranscriptEntry = { ts?: string; role: "User" | "Assistant" | "System"; text: string };
+const normalizeRole = (role: TranscriptEntry["role"]): "User" | "Assistant" => (role === "User" ? "User" : "Assistant");
+const METADATA_NOISE_PATTERNS = [
+  "supports_reasoning_summaries",
+  "support_verbosity",
+  "default_verbosity",
+  "apply_patch_tool_type",
+  "truncation_policy",
+  "supports_parallel_tool_calls",
+  "context_window",
+  "effective_context_window_percent",
+  "experimental_supported_tools",
+  "input_modalities",
+  "prefer_websockets"
+];
+const isMetadataNoise = (text: string) => {
+  const lower = text.toLowerCase();
+  return METADATA_NOISE_PATTERNS.some((pattern) => lower.includes(pattern));
+};
+const toTime = (value?: string | null) => {
+  if (!value) return 0;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+};
 
 const parseSessionJsonObjects = (input: string) => {
   const blocks = input
@@ -66,11 +90,13 @@ const buildSessionTranscript = (snippet: string) => {
 
   const entries: TranscriptEntry[] = [];
   const pushEntry = (entry: TranscriptEntry) => {
+    const normalizedRole = normalizeRole(entry.role);
     const text = entry.text.trim();
     if (!text) return;
+    if (isMetadataNoise(text)) return;
     const prev = entries[entries.length - 1];
-    if (prev && prev.role === entry.role && prev.text === text) return;
-    entries.push({ ...entry, text });
+    if (prev && prev.role === normalizedRole && prev.text === text) return;
+    entries.push({ ...entry, role: normalizedRole, text });
   };
 
   if (objects.length > 0) {
@@ -115,9 +141,28 @@ const buildSessionTranscript = (snippet: string) => {
         pushEntry({ role, text: match[2] });
       }
     }
+    if (entries.length === 0) {
+      // Also handle block form:
+      // User
+      // <text>
+      // (blank line)
+      // Assistant
+      // <text>
+      for (const block of snippet.split(/\n\s*\n/g).map((part) => part.trim()).filter(Boolean)) {
+        const [head, ...rest] = block.split(/\r?\n/);
+        const role = (head ?? "").trim().toLowerCase();
+        if (role !== "user" && role !== "assistant" && role !== "system") continue;
+        const body = rest.join("\n").trim();
+        if (!body || isMetadataNoise(body)) continue;
+        pushEntry({
+          role: role === "user" ? "User" : role === "assistant" ? "Assistant" : "System",
+          text: body
+        });
+      }
+    }
   }
 
-  if (entries.length === 0) return snippet.trim();
+  if (entries.length === 0) return "";
   return entries
     .map((entry) => {
       const tsPart = fmtTs(entry.ts);
@@ -127,13 +172,60 @@ const buildSessionTranscript = (snippet: string) => {
     .join("\n\n");
 };
 
+const summarizePromptAsTitle = (input: string) => {
+  const cleaned = input
+    .replace(/[`"'“”]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+
+  const firstSentence = cleaned.split(/[.!?]\s/)[0]?.trim() ?? cleaned;
+  const words = firstSentence.split(" ").filter(Boolean);
+  const compact = words.slice(0, 6).join(" ");
+  if (!compact) return "";
+  const titled = compact.charAt(0).toUpperCase() + compact.slice(1);
+  return words.length > 6 ? `${titled}...` : titled;
+};
+
+const extractFlowTitle = (snippet: string) => {
+  const transcript = buildSessionTranscript(snippet);
+  const blocks = transcript
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (blocks.length === 0) return "";
+
+  const parsed = blocks.map((block) => {
+    const [head, ...rest] = block.split(/\n/);
+    const text = (rest.join("\n").trim() || head || "").trim();
+    const role =
+      head?.toLowerCase().includes("user")
+        ? "user"
+        : head?.toLowerCase().includes("assistant")
+          ? "assistant"
+          : "system";
+    return { role, text };
+  }).filter((entry) => entry.text.length > 0);
+
+  const firstUser = parsed.find((entry) => entry.role === "user")?.text ?? "";
+  if (firstUser) {
+    const title = summarizePromptAsTitle(firstUser);
+    if (title) return title;
+  }
+
+  const firstText = parsed[0]?.text ?? "";
+  return summarizePromptAsTitle(firstText);
+};
+
 export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJob, onRerun, onClearRecentJobs, clearingRecentJobs }: Props) => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedSessionKey, setSelectedSessionKey] = useState<string>("");
   const [deviceFilterId, setDeviceFilterId] = useState<string>("all");
+  const [followUpPrompt, setFollowUpPrompt] = useState<string>("");
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
 
   const runningSessions = useMemo(() => {
-    return agents.flatMap((agent) => {
+    const rows = agents.flatMap((agent) => {
       const runtimes = (agent.ai_context?.runtimes ?? []).filter((runtime) => runtime.kind === "codex" || runtime.kind === "claude");
       const latestJob = jobs.find((job) => job.agent_id === agent.id) ?? null;
       const sessions = (agent.ai_context?.sessions ?? []).filter((session) => (session.snippet ?? "").trim().length > 0);
@@ -145,6 +237,7 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
           runtimes,
           latestJob,
           session: null as AgentSession | null,
+          flowTitle: "",
           ts: latestJob?.created_at ?? agent.last_seen ?? agent.created_at
         }];
       }
@@ -155,14 +248,25 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
         runtimes,
         latestJob,
         session,
+        flowTitle: extractFlowTitle(session.snippet ?? ""),
         ts: session.updated_at ?? latestJob?.created_at ?? agent.last_seen ?? agent.created_at
       }));
-    }).sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+    });
+
+    const deduped = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const prev = deduped.get(row.key);
+      if (!prev || toTime(row.ts) > toTime(prev.ts)) {
+        deduped.set(row.key, row);
+      }
+    }
+
+    return [...deduped.values()].sort((a, b) => toTime(b.ts) - toTime(a.ts));
   }, [agents, jobs]);
 
   const filteredJobs = useMemo(() => {
     const base = deviceFilterId === "all" ? jobs : jobs.filter((job) => job.agent_id === deviceFilterId);
-    return [...base].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return [...base].sort((a, b) => toTime(b.created_at) - toTime(a.created_at));
   }, [deviceFilterId, jobs]);
 
   const filteredSessions = useMemo(() => {
@@ -177,13 +281,20 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
       ts: entry.ts,
       entry
     }));
-    const jobItems = filteredJobs.map((job) => ({
+    const mirroredJobIds = new Set(
+      filteredSessions
+        .map((entry) => entry.latestJob?.id)
+        .filter((id): id is string => Boolean(id))
+    );
+    const jobItems = filteredJobs
+      .filter((job) => !mirroredJobIds.has(job.id))
+      .map((job) => ({
       kind: "job" as const,
       key: `job-${job.id}`,
       ts: job.created_at,
       job
     }));
-    return [...sessionItems, ...jobItems].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+    return [...sessionItems, ...jobItems].sort((a, b) => toTime(b.ts) - toTime(a.ts));
   }, [filteredJobs, filteredSessions]);
 
   const hasItems = listItems.length > 0;
@@ -217,6 +328,38 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
     [selectedSessionSnippet]
   );
   const showingSession = Boolean(selectedSessionEntry);
+  const selectedHasCodex = Boolean(
+    selectedSessionEntry?.session?.kind === "codex" ||
+    selectedSessionEntry?.runtimes?.some((runtime) => runtime.kind === "codex")
+  );
+
+  const quoteForBash = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  const quoteForPowerShell = (value: string) => `'${value.replace(/'/g, "''")}'`;
+
+  const buildCodexResumeCommand = () => {
+    const prompt = followUpPrompt.trim();
+    const sessionId = selectedSessionEntry?.session?.session_id?.trim() ?? "";
+    const os = `${selectedAgent?.device_os ?? ""}`.toLowerCase();
+    const isWindows = os.includes("win");
+    if (isWindows) {
+      const sid = sessionId ? quoteForPowerShell(sessionId) : "--last";
+      return `codex resume ${sid} ${quoteForPowerShell(prompt)}`;
+    }
+    const sid = sessionId ? quoteForBash(sessionId) : "--last";
+    return `codex resume ${sid} ${quoteForBash(prompt)}`;
+  };
+
+  const sendFollowUp = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!showingSession || !selectedAgent || !selectedHasCodex || !followUpPrompt.trim()) return;
+    setSendingFollowUp(true);
+    try {
+      await onRerun({ agentId: selectedAgent.id, command: buildCodexResumeCommand() });
+      setFollowUpPrompt("");
+    } finally {
+      setSendingFollowUp(false);
+    }
+  };
 
   return (
     <section className="jobs-grid">
@@ -246,6 +389,7 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
             const { agent, runtimes, latestJob, session, key } = item.entry;
             const flowLabel = (session?.flow_id ?? session?.session_id ?? "").slice(0, 12);
             const isActive = selectedSessionKey === key;
+            const sessionTitle = item.entry.flowTitle || `${agent.name} live flow`;
             return (
               <button
                 type="button"
@@ -255,9 +399,9 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
                   setSelectedAgentId(agent.id);
                   setSelectedSessionKey(key);
                 }}
-              >
+                >
                 <div className="running-agent-context">
-                  <strong>{latestJob?.command ?? `${agent.name} live flow`}</strong>
+                  <strong>{sessionTitle}</strong>
                   <small>{relativeTime(item.ts)}</small>
                   <small className="running-agent-live">
                     {runtimes.some((r) => r.kind === "codex") ? "Codex CLI " : ""}
@@ -367,6 +511,19 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
             }}
             mode={showingSession ? "chat" : "log"}
           />
+          {showingSession ? (
+            <form className="session-reply" onSubmit={(event) => void sendFollowUp(event)}>
+              <input
+                value={followUpPrompt}
+                onChange={(event) => setFollowUpPrompt(event.target.value)}
+                placeholder={selectedHasCodex ? "Continue this flow..." : "Codex runtime not detected for this session"}
+                disabled={!selectedHasCodex || sendingFollowUp}
+              />
+              <button type="submit" className="btn" disabled={!selectedHasCodex || sendingFollowUp || !followUpPrompt.trim()}>
+                {sendingFollowUp ? "Sending..." : "Send"}
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
     </section>
