@@ -1,0 +1,69 @@
+project_id = "agenthub"
+
+[api]
+enabled = true
+port = 55321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 15
+
+[studio]
+enabled = true
+port = 55323
+
+[inbucket]
+enabled = true
+port = 55324
+smtp_port = 55325
+pop3_port = 55326
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[analytics]
+enabled = true
+port = 55327
+vector_port = 55328
+
+[db.pooler]
+enabled = false
+port = 55329
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://127.0.0.1:5173", "https://agenthub.app"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[functions.issue-pairing-token]
+verify_jwt = false
+
+[functions.pair-device]
+verify_jwt = false
+
+[functions.connector-heartbeat]
+verify_jwt = false
+
+[functions.connector-pull-jobs]
+verify_jwt = false
+
+[functions.connector-stream-event]
+verify_jwt = false
+
+[functions.connector-complete-job]
+verify_jwt = false
+
+[functions.create-job]
+verify_jwt = false
+
+[functions.revoke-agent]
+verify_jwt = false

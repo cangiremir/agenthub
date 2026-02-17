@@ -1,0 +1,32 @@
+{
+  "name": "agenthub",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm --workspace @agenthub/web run dev",
+    "dev:connector": "npm --workspace @agenthub/connector run dev",
+    "dev:worker": "npm --workspace @agenthub/push-worker run dev",
+    "connector:install": "node scripts/install-connector.mjs",
+    "build": "npm run build:web && npm run build:connector && npm run build:worker",
+    "build:web": "npm --workspace @agenthub/web run build",
+    "build:connector": "npm --workspace @agenthub/connector run build",
+    "build:worker": "npm --workspace @agenthub/push-worker run build",
+    "lint": "npm run lint:web && npm run lint:connector && npm run lint:worker",
+    "lint:web": "npm --workspace @agenthub/web run lint",
+    "lint:connector": "npm --workspace @agenthub/connector run lint",
+    "lint:worker": "npm --workspace @agenthub/push-worker run lint",
+    "test": "npm run test:web && npm run test:connector && npm run test:worker",
+    "test:web": "npm --workspace @agenthub/web run test",
+    "test:connector": "npm --workspace @agenthub/connector run test",
+    "test:worker": "npm --workspace @agenthub/push-worker run test",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

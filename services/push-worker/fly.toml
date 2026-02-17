@@ -1,0 +1,11 @@
+app = "agenthub-push-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "node services/push-worker/dist/index.js"
+
+[env]
+  NODE_ENV = "production"
