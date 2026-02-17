@@ -5,6 +5,23 @@ export type Agent = {
   name: string;
   policy: AgentPolicy;
   device_os: string;
+  ai_context: {
+    detected_at?: string;
+    runtimes?: Array<{
+      kind: "codex" | "claude";
+      process_name?: string;
+      command?: string;
+      pid?: number;
+    }>;
+    sessions?: Array<{
+      kind?: "codex" | "claude" | "unknown";
+      source?: string;
+      session_id?: string;
+      flow_id?: string;
+      updated_at?: string;
+      snippet?: string;
+    }>;
+  } | null;
   last_seen: string | null;
   last_command: string | null;
   revoked_at: string | null;

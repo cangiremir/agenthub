@@ -147,6 +147,90 @@ select {
   border-color: var(--primary);
 }
 
+.job-group {
+  margin-bottom: 12px;
+}
+
+.job-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7fbf4;
+}
+
+.job-group-head small {
+  color: var(--muted);
+}
+
+.running-agents {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #fbfdf8;
+}
+
+.running-agents h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.running-agent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.running-agent-item:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.running-agent-item small {
+  display: block;
+  color: var(--muted);
+}
+
+.running-agent-context {
+  min-width: 0;
+}
+
+.running-agent-live {
+  margin-top: 4px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.running-agent-flow {
+  margin-top: 2px;
+  display: block;
+  color: var(--muted);
+}
+
+.running-agent-preview {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbf4;
+  padding: 6px;
+}
+
+.running-agent-preview pre {
+  margin: 4px 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+
 .chip {
   border-radius: 999px;
   padding: 2px 8px;
@@ -303,6 +387,39 @@ select {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.section-head select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #fff;
+}
+
+.section-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.clear-jobs-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.clear-jobs-btn:hover {
+  color: var(--danger);
+  background: #fff2f2;
+}
+
+.clear-jobs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .muted {

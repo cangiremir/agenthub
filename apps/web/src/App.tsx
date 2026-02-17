@@ -12,6 +12,8 @@ import { DevicesPage } from "./pages/DevicesPage";
 import { JobsPage } from "./pages/JobsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
+const ACTIVE_REFRESH_MS = 5000;
+
 const AuthGate = ({ onReady }: { onReady: () => void }) => {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -69,6 +71,7 @@ export const App = () => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [history, setHistory] = useState<CommandHistory[]>([]);
@@ -76,6 +79,7 @@ export const App = () => {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [clearingRecentJobs, setClearingRecentJobs] = useState(false);
   const [pendingFull, setPendingFull] = useState<{ agentId: string; command: string } | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -108,14 +112,16 @@ export const App = () => {
   };
 
   const loadAll = async () => {
-    const [a, j, e, h] = await Promise.all([
+    const [a, allA, j, e, h] = await Promise.all([
       supabase.from("agents").select("*").is("revoked_at", null).order("created_at", { ascending: true }),
+      supabase.from("agents").select("*").order("created_at", { ascending: true }),
       supabase.from("jobs").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("job_events").select("*").order("created_at", { ascending: false }).limit(1500),
       supabase.from("command_history").select("*").order("created_at", { ascending: false }).limit(150)
     ]);
 
     setAgents((a.data as Agent[]) ?? []);
+    setAllAgents((allA.data as Agent[]) ?? []);
     setJobs((j.data as Job[]) ?? []);
     setEvents(((e.data as JobEvent[]) ?? []).reverse());
     setHistory((h.data as CommandHistory[]) ?? []);
@@ -152,6 +158,16 @@ export const App = () => {
 
     return () => {
       void supabase.removeChannel(channel);
+    };
+  }, [sessionUserId]);
+
+  useEffect(() => {
+    if (!sessionUserId) return;
+    const timer = window.setInterval(() => {
+      void loadAll();
+    }, ACTIVE_REFRESH_MS);
+    return () => {
+      window.clearInterval(timer);
     };
   }, [sessionUserId]);
 
@@ -206,6 +222,21 @@ export const App = () => {
     return chunks.length > 0 ? chunks.join("") : selectedJob.output_preview;
   }, [events, selectedJob]);
 
+  const clearRecentJobs = async () => {
+    setClearingRecentJobs(true);
+    setError(null);
+    const { error: deleteError } = await supabase
+      .from("jobs")
+      .delete()
+      .not("id", "is", null);
+    if (deleteError) {
+      setError(deleteError.message);
+    }
+    setSelectedJobId(null);
+    await loadAll();
+    setClearingRecentJobs(false);
+  };
+
   if (loading) {
     return (
       <main className="page shell">
@@ -250,11 +281,33 @@ export const App = () => {
       <Routes>
         <Route
           path="/"
-          element={<JobsPage jobs={jobs} agents={agents} selectedJob={selectedJob} selectedOutput={selectedOutput} onSelectJob={setSelectedJobId} onRerun={runJob} />}
+          element={
+            <JobsPage
+              jobs={jobs}
+              agents={allAgents}
+              selectedJob={selectedJob}
+              selectedOutput={selectedOutput}
+              onSelectJob={setSelectedJobId}
+              onRerun={runJob}
+              onClearRecentJobs={clearRecentJobs}
+              clearingRecentJobs={clearingRecentJobs}
+            />
+          }
         />
         <Route
           path="/jobs"
-          element={<JobsPage jobs={jobs} agents={agents} selectedJob={selectedJob} selectedOutput={selectedOutput} onSelectJob={setSelectedJobId} onRerun={runJob} />}
+          element={
+            <JobsPage
+              jobs={jobs}
+              agents={allAgents}
+              selectedJob={selectedJob}
+              selectedOutput={selectedOutput}
+              onSelectJob={setSelectedJobId}
+              onRerun={runJob}
+              onClearRecentJobs={clearRecentJobs}
+              clearingRecentJobs={clearingRecentJobs}
+            />
+          }
         />
         <Route path="/devices" element={<DevicesPage agents={agents} onChanged={loadAll} />} />
         <Route path="/settings" element={<SettingsPage agents={agents} onChanged={loadAll} />} />

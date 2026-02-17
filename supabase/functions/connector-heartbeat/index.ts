@@ -8,9 +8,13 @@ Deno.serve(async (req) => {
   const { agent, error } = await verifyAgentToken(req.headers.get("authorization"));
   if (!agent) return unauthorized(error ?? "Unauthorized");
 
+  const body = await req.json().catch(() => ({})) as {
+    ai_context?: unknown;
+  };
+
   const { error: updateError } = await serviceClient
     .from("agents")
-    .update({ last_seen: new Date().toISOString() })
+    .update({ last_seen: new Date().toISOString(), ai_context: body?.ai_context ?? null })
     .eq("id", agent.id);
 
   if (updateError) return json({ error: updateError.message }, { status: 500 });
