@@ -1,6 +1,8 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$PairingCode,
+  [ValidateSet("SAFE", "DEV", "FULL")]
+  [string]$Policy = "SAFE",
   [string]$AppOrigin = "http://127.0.0.1:5173",
   [string]$SupabaseUrl = "http://127.0.0.1:55321"
 )
@@ -20,6 +22,7 @@ $pairBody = @{
   code = $PairingCode
   agent_name = $env:COMPUTERNAME
   device_os = "windows"
+  policy = $Policy.ToUpperInvariant()
 } | ConvertTo-Json
 
 $resp = Invoke-RestMethod -Method Post -Uri "$SupabaseUrl/functions/v1/pair-device" -ContentType "application/json" -Body $pairBody

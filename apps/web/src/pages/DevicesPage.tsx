@@ -4,7 +4,7 @@ import { Spinner } from "../components/Spinner";
 import { StatusBadge } from "../components/StatusBadge";
 import { relativeTime } from "../lib/time";
 import { supabase } from "../lib/supabase";
-import { Agent } from "../lib/types";
+import { Agent, AgentPolicy } from "../lib/types";
 
 type Props = {
   agents: Agent[];
@@ -13,14 +13,21 @@ type Props = {
 
 export const DevicesPage = ({ agents, onChanged }: Props) => {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingPolicy, setPairingPolicy] = useState<AgentPolicy>("SAFE");
   const [busy, setBusy] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const appOrigin = window.location.origin;
   const installCommand =
     pairingCode && pairingCode.length > 0
-      ? `curl -fsSL ${appOrigin}/install-connector.sh | bash -s -- ${pairingCode}`
+      ? `curl -fsSL ${appOrigin}/install-connector.sh | bash -s -- ${pairingCode} ${pairingPolicy}`
       : "";
+  const policyDescription =
+    pairingPolicy === "SAFE"
+      ? "SAFE: read-only baseline commands only (lowest risk)."
+      : pairingPolicy === "DEV"
+        ? "DEV: developer tooling commands allowed (balanced)."
+        : "FULL: all commands allowed (highest risk).";
 
   const resolveInvokeError = async (error: unknown): Promise<string> => {
     const status = (error as { context?: { status?: number } })?.context?.status;
@@ -93,6 +100,15 @@ export const DevicesPage = ({ agents, onChanged }: Props) => {
         <button type="button" className="btn" onClick={() => void issueCode()} disabled={busy}>
           {busy ? <Spinner /> : "Generate pairing code"}
         </button>
+        <p>
+          Policy:{" "}
+          <select value={pairingPolicy} onChange={(e) => setPairingPolicy(e.target.value as AgentPolicy)}>
+            <option value="SAFE">SAFE</option>
+            <option value="DEV">DEV</option>
+            <option value="FULL">FULL</option>
+          </select>
+        </p>
+        <p className="muted">{policyDescription}</p>
         {pairingCode ? (
           <>
             <p className="code-box">
@@ -115,10 +131,18 @@ export const DevicesPage = ({ agents, onChanged }: Props) => {
     <section className="card">
       <div className="section-head">
         <h2>Devices</h2>
-        <button type="button" className="btn ghost" onClick={() => void issueCode()} disabled={busy}>
-          {busy ? <Spinner /> : "New pairing code"}
-        </button>
+        <div className="section-actions">
+          <select value={pairingPolicy} onChange={(e) => setPairingPolicy(e.target.value as AgentPolicy)} aria-label="Pairing policy">
+            <option value="SAFE">SAFE</option>
+            <option value="DEV">DEV</option>
+            <option value="FULL">FULL</option>
+          </select>
+          <button type="button" className="btn ghost" onClick={() => void issueCode()} disabled={busy}>
+            {busy ? <Spinner /> : "New pairing code"}
+          </button>
+        </div>
       </div>
+      <p className="muted">{policyDescription}</p>
       {pairingCode ? (
         <>
           <p className="code-box">

@@ -1,5 +1,7 @@
 param(
-  [string]$PairingCode
+  [string]$PairingCode,
+  [ValidateSet("SAFE", "DEV", "FULL")]
+  [string]$Policy = "SAFE"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +27,7 @@ $resp = Invoke-RestMethod -Method Post -Uri "$supabaseUrl/functions/v1/pair-devi
   code = $PairingCode
   agent_name = $name
   device_os = "windows"
+  policy = $Policy.ToUpperInvariant()
 } | ConvertTo-Json)
 
 if (-not $resp.agent_token) {

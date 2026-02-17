@@ -21,6 +21,12 @@ say_ok() { echo -e "  ${C_OK}✅ $1${C_RESET}"; }
 say_err() { echo -e "  ${C_ERR}❌ $1${C_RESET}" >&2; }
 
 PAIRING_CODE="${1:-}"
+POLICY="${2:-SAFE}"
+POLICY="$(printf '%s' "$POLICY" | tr '[:lower:]' '[:upper:]')"
+if [[ "$POLICY" != "SAFE" && "$POLICY" != "DEV" && "$POLICY" != "FULL" ]]; then
+  say_err "Policy must be SAFE, DEV, or FULL."
+  exit 1
+fi
 if [[ -z "$PAIRING_CODE" ]]; then
   say_title
   say_step "No pairing code argument provided."
@@ -68,7 +74,7 @@ say_ok "Environment checks passed."
 say_step "Pairing device..."
 RESP="$(curl -sS "$SUPABASE_URL/functions/v1/pair-device" \
   -H 'content-type: application/json' \
-  -d "{\"code\":\"$PAIRING_CODE\",\"agent_name\":\"$(hostname)\",\"device_os\":\"linux\"}")"
+  -d "{\"code\":\"$PAIRING_CODE\",\"agent_name\":\"$(hostname)\",\"device_os\":\"linux\",\"policy\":\"$POLICY\"}")"
 
 if command -v node >/dev/null 2>&1; then
   TOKEN="$(printf '%s' "$RESP" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s||'{}');if(!j.agent_token){process.stderr.write((j.error||'Pairing failed')+'\\n');process.exit(1)};process.stdout.write(j.agent_token);});")"

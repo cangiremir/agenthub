@@ -9,6 +9,12 @@ SUPABASE_URL="$(grep -E '^SUPABASE_URL=' .env.local | head -n1 | cut -d= -f2-)"
 SUPABASE_URL="${SUPABASE_URL:-http://127.0.0.1:55321}"
 
 PAIRING_CODE="${1:-}"
+POLICY="${2:-SAFE}"
+POLICY="$(printf '%s' "$POLICY" | tr '[:lower:]' '[:upper:]')"
+if [[ "$POLICY" != "SAFE" && "$POLICY" != "DEV" && "$POLICY" != "FULL" ]]; then
+  echo "Policy must be SAFE, DEV, or FULL." >&2
+  exit 1
+fi
 if [[ -z "$PAIRING_CODE" ]]; then
   read -r -p "Pairing code: " PAIRING_CODE
 fi
@@ -16,7 +22,7 @@ AGENT_NAME="$(hostname)"
 
 RESP="$(curl -sS "$SUPABASE_URL/functions/v1/pair-device" \
   -H 'content-type: application/json' \
-  -d "{\"code\":\"$PAIRING_CODE\",\"agent_name\":\"$AGENT_NAME\",\"device_os\":\"linux\"}")"
+  -d "{\"code\":\"$PAIRING_CODE\",\"agent_name\":\"$AGENT_NAME\",\"device_os\":\"linux\",\"policy\":\"$POLICY\"}")"
 
 TOKEN="$(printf '%s' "$RESP" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s||'{}');if(!j.agent_token){process.stderr.write('Pairing failed\\n');process.exit(1)};process.stdout.write(j.agent_token);});")"
 
