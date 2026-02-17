@@ -4,11 +4,12 @@ type Props = {
   text: string;
   title?: string;
   onLoadFull?: () => Promise<string>;
+  mode?: "log" | "chat";
 };
 
 const MAX_VISIBLE = 12000;
 
-export const TerminalOutput = ({ text, title = "Output", onLoadFull }: Props) => {
+export const TerminalOutput = ({ text, title = "Output", onLoadFull, mode = "log" }: Props) => {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [autoscroll, setAutoscroll] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -38,6 +39,26 @@ export const TerminalOutput = ({ text, title = "Output", onLoadFull }: Props) =>
   }, [visible, autoscroll]);
 
   const lines = useMemo(() => visible || "(no output yet)", [visible]);
+  const transcriptBlocks = useMemo(() => {
+    if (mode !== "chat") return [];
+    return lines
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean)
+      .map((block, index) => {
+        const [head, ...rest] = block.split(/\n/);
+        const body = rest.join("\n").trim();
+        const match = head?.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*(User|Assistant|System)$/);
+        const role = match?.[2] ?? (head?.includes("User") ? "User" : head?.includes("Assistant") ? "Assistant" : "System");
+        const time = match?.[1] ?? "";
+        return {
+          id: `${role}-${time}-${index}`,
+          role,
+          time,
+          text: body || head || "(no output yet)"
+        };
+      });
+  }, [lines, mode]);
 
   const copy = async () => {
     await navigator.clipboard.writeText(displayText);
@@ -68,15 +89,29 @@ export const TerminalOutput = ({ text, title = "Output", onLoadFull }: Props) =>
         <strong>{title}</strong>
         <div className="terminal-actions">
           <button type="button" className="btn ghost" onClick={copy}>
-            Copy output
+            {mode === "chat" ? "Copy transcript" : "Copy output"}
           </button>
           <button type="button" className="btn ghost" onClick={download}>
             Download full log
           </button>
         </div>
       </div>
-      <div className="terminal" ref={boxRef}>
-        <pre>{lines}</pre>
+      <div className={`terminal ${mode === "chat" ? "transcript" : ""}`} ref={boxRef}>
+        {mode === "chat" ? (
+          <div className="chat-list">
+            {transcriptBlocks.map((entry) => (
+              <article key={entry.id} className={`chat-row ${entry.role.toLowerCase()}`}>
+                <div className="chat-head">
+                  <strong>{entry.role === "User" ? "You" : entry.role}</strong>
+                  {entry.time ? <small>{entry.time}</small> : null}
+                </div>
+                <p className="chat-bubble">{entry.text}</p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <pre>{lines}</pre>
+        )}
       </div>
       {truncated ? (
         <button type="button" className="btn link" onClick={showMore}>

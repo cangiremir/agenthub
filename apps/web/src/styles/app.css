@@ -283,8 +283,69 @@ select {
   margin: 0;
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.terminal.transcript {
+  background: linear-gradient(180deg, #16231d 0%, #101914 100%);
+  color: #e7fff1;
+}
+
+.terminal.transcript pre {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+}
+
+.chat-list {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-row {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c7e8d5;
+}
+
+.chat-head small {
+  opacity: 0.75;
+  font-size: 11px;
+}
+
+.chat-bubble {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 88%;
+}
+
+.chat-row.user .chat-bubble {
+  background: #1f8a5b;
+  color: #f3fff8;
+  justify-self: end;
+}
+
+.chat-row.assistant .chat-bubble {
+  background: #244334;
+  color: #e4f7ec;
+}
+
+.chat-row.system .chat-bubble {
+  background: #2a3330;
+  color: #d6e6de;
+  font-style: italic;
 }
 
 .status-badge,

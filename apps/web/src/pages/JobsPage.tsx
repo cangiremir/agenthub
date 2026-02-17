@@ -63,7 +63,6 @@ const fmtTs = (ts?: string) => {
 const buildSessionTranscript = (snippet: string) => {
   if (!snippet.trim()) return "";
   const objects = parseSessionJsonObjects(snippet);
-  if (objects.length === 0) return snippet;
 
   const entries: TranscriptEntry[] = [];
   const pushEntry = (entry: TranscriptEntry) => {
@@ -74,45 +73,58 @@ const buildSessionTranscript = (snippet: string) => {
     entries.push({ ...entry, text });
   };
 
-  for (const obj of objects) {
-    const type = typeof obj.type === "string" ? obj.type : "";
-    const payload = (obj.payload && typeof obj.payload === "object") ? obj.payload as Record<string, unknown> : null;
-    const ts = typeof obj.timestamp === "string" ? obj.timestamp : undefined;
-    if (!payload) continue;
+  if (objects.length > 0) {
+    for (const obj of objects) {
+      const type = typeof obj.type === "string" ? obj.type : "";
+      const payload = (obj.payload && typeof obj.payload === "object") ? obj.payload as Record<string, unknown> : null;
+      const ts = typeof obj.timestamp === "string" ? obj.timestamp : undefined;
+      if (!payload) continue;
 
-    if (type === "event_msg") {
-      const payloadType = typeof payload.type === "string" ? payload.type : "";
-      if (payloadType === "user_message" && typeof payload.message === "string") {
-        pushEntry({ ts, role: "User", text: payload.message });
-      } else if (payloadType === "agent_message" && typeof payload.message === "string") {
-        pushEntry({ ts, role: "Assistant", text: payload.message });
-      } else if (payloadType === "task_complete" && typeof payload.last_agent_message === "string") {
-        pushEntry({ ts, role: "Assistant", text: payload.last_agent_message });
-      }
-      continue;
-    }
-
-    if (type === "response_item") {
-      const role = payload.role === "assistant" ? "Assistant" : payload.role === "user" ? "User" : "";
-      const content = Array.isArray(payload.content) ? payload.content as Array<Record<string, unknown>> : [];
-      for (const item of content) {
-        const itemType = typeof item.type === "string" ? item.type : "";
-        if (role === "User" && itemType === "input_text" && typeof item.text === "string") {
-          pushEntry({ ts, role: "User", text: item.text });
-        } else if (role === "Assistant" && itemType === "output_text" && typeof item.text === "string") {
-          pushEntry({ ts, role: "Assistant", text: item.text });
+      if (type === "event_msg") {
+        const payloadType = typeof payload.type === "string" ? payload.type : "";
+        if (payloadType === "user_message" && typeof payload.message === "string") {
+          pushEntry({ ts, role: "User", text: payload.message });
+        } else if (payloadType === "agent_message" && typeof payload.message === "string") {
+          pushEntry({ ts, role: "Assistant", text: payload.message });
+        } else if (payloadType === "task_complete" && typeof payload.last_agent_message === "string") {
+          pushEntry({ ts, role: "Assistant", text: payload.last_agent_message });
         }
+        continue;
+      }
+
+      if (type === "response_item") {
+        const role = payload.role === "assistant" ? "Assistant" : payload.role === "user" ? "User" : "";
+        const content = Array.isArray(payload.content) ? payload.content as Array<Record<string, unknown>> : [];
+        for (const item of content) {
+          const itemType = typeof item.type === "string" ? item.type : "";
+          if (role === "User" && itemType === "input_text" && typeof item.text === "string") {
+            pushEntry({ ts, role: "User", text: item.text });
+          } else if (role === "Assistant" && itemType === "output_text" && typeof item.text === "string") {
+            pushEntry({ ts, role: "Assistant", text: item.text });
+          }
+        }
+      }
+    }
+  } else {
+    // Fallback for non-JSON session snippets: normalize "User:/Assistant:" lines.
+    for (const rawLine of snippet.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+      const line = rawLine.replace(/^\[(\d{2}:\d{2}:\d{2})\]\s*/, "");
+      const match = line.match(/^(User|Assistant|System)\s*:\s*(.+)$/i);
+      if (match) {
+        const role = (match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()) as TranscriptEntry["role"];
+        pushEntry({ role, text: match[2] });
       }
     }
   }
 
-  if (entries.length === 0) return snippet;
+  if (entries.length === 0) return snippet.trim();
   return entries
     .map((entry) => {
       const tsPart = fmtTs(entry.ts);
-      return tsPart ? `[${tsPart}] ${entry.role}: ${entry.text}` : `${entry.role}: ${entry.text}`;
+      const header = tsPart ? `[${tsPart}] ${entry.role}` : `${entry.role}`;
+      return `${header}\n${entry.text}`;
     })
-    .join("\n");
+    .join("\n\n");
 };
 
 export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJob, onRerun, onClearRecentJobs, clearingRecentJobs }: Props) => {
@@ -353,6 +365,7 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
               if (error || !data) return selectedOutput;
               return await data.text();
             }}
+            mode={showingSession ? "chat" : "log"}
           />
         </div>
       ) : null}
