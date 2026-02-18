@@ -217,6 +217,26 @@ const extractFlowTitle = (snippet: string) => {
   return summarizePromptAsTitle(firstText);
 };
 
+const normalizeCodexSessionId = (value: string) => {
+  const raw = value.trim();
+  if (!raw) return "";
+  const match = raw.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  return match ? match[1] : raw;
+};
+
+const formatJobLabel = (command: string) => {
+  const trimmed = command.trim();
+  if (/^codex\s+exec\s+resume\b/i.test(trimmed) || /^codex\s+resume\b/i.test(trimmed)) {
+    return "Continue Codex flow";
+  }
+  return trimmed;
+};
+
+const isHiddenRecentJobCommand = (command: string) => {
+  const trimmed = command.trim();
+  return /^codex\s+(exec\s+)?resume\b/i.test(trimmed);
+};
+
 export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJob, onRerun, onClearRecentJobs, clearingRecentJobs }: Props) => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedSessionKey, setSelectedSessionKey] = useState<string>("");
@@ -266,7 +286,9 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
 
   const filteredJobs = useMemo(() => {
     const base = deviceFilterId === "all" ? jobs : jobs.filter((job) => job.agent_id === deviceFilterId);
-    return [...base].sort((a, b) => toTime(b.created_at) - toTime(a.created_at));
+    return base
+      .filter((job) => !isHiddenRecentJobCommand(job.command))
+      .sort((a, b) => toTime(b.created_at) - toTime(a.created_at));
   }, [deviceFilterId, jobs]);
 
   const filteredSessions = useMemo(() => {
@@ -333,20 +355,18 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
     selectedSessionEntry?.runtimes?.some((runtime) => runtime.kind === "codex")
   );
 
-  const quoteForBash = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
-  const quoteForPowerShell = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const quoteForAnyShell = (value: string) => {
+    const oneLine = value.replace(/\r?\n/g, " ").trim();
+    // Use double-quoted argument form and normalize embedded quotes.
+    const normalized = oneLine.replace(/"/g, "'");
+    return `"${normalized}"`;
+  };
 
   const buildCodexResumeCommand = () => {
     const prompt = followUpPrompt.trim();
-    const sessionId = selectedSessionEntry?.session?.session_id?.trim() ?? "";
-    const os = `${selectedAgent?.device_os ?? ""}`.toLowerCase();
-    const isWindows = os.includes("win");
-    if (isWindows) {
-      const sid = sessionId ? quoteForPowerShell(sessionId) : "--last";
-      return `codex resume ${sid} ${quoteForPowerShell(prompt)}`;
-    }
-    const sid = sessionId ? quoteForBash(sessionId) : "--last";
-    return `codex resume ${sid} ${quoteForBash(prompt)}`;
+    const sessionId = normalizeCodexSessionId(selectedSessionEntry?.session?.session_id ?? "");
+    const sid = sessionId || "--last";
+    return `codex exec resume ${sid} ${quoteForAnyShell(prompt)}`;
   };
 
   const sendFollowUp = async (event: React.FormEvent) => {
@@ -433,7 +453,7 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
               }}
             >
               <div className="job-main">
-                <strong>{job.command}</strong>
+                <strong>{formatJobLabel(job.command)}</strong>
                 <small>{relativeTime(job.created_at)}</small>
               </div>
               <div className="job-meta">
@@ -459,7 +479,7 @@ export const JobsPage = ({ jobs, agents, selectedJob, selectedOutput, onSelectJo
               <h2>
                 {showingSession
                   ? `${selectedAgent?.name ?? "Agent"} flow ${selectedSessionEntry?.session?.flow_id?.slice(0, 12) ?? ""}`.trim()
-                  : (selectedJob?.command ?? `${selectedAgent?.name ?? "Agent"} live session`)}
+                  : (selectedJob ? formatJobLabel(selectedJob.command) : `${selectedAgent?.name ?? "Agent"} live session`)}
               </h2>
               <small>
                 {showingSession
