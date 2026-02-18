@@ -309,9 +309,14 @@ const parseSessionDirs = () => {
   return [path.join(home, ".codex", "sessions"), path.join(home, ".codex"), path.join(home, ".claude")];
 };
 
-const compactText = (text, maxLen = 320) => {
+const compactText = (text, maxLen = 900) => {
   if (!text) return "";
-  return `${text}`.replace(/\s+/g, " ").trim().slice(0, maxLen);
+  const normalized = `${text}`.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLen) return normalized;
+  const candidate = normalized.slice(0, maxLen);
+  const wordBoundary = candidate.lastIndexOf(" ");
+  const head = wordBoundary > Math.floor(maxLen * 0.6) ? candidate.slice(0, wordBoundary) : candidate;
+  return `${head.trim()}...`;
 };
 
 const findRecentSessionFiles = (rootDir, extensions = ALLOWED_SESSION_EXTENSIONS) => {
